@@ -1,8 +1,9 @@
 ---
 title: 'Splicing influence estimation by Long Reads: SaiLoR'
 output:
-  html_document: default
-  pdf_document: default
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
 ---
 
 ```{r setup, warning=FALSE, message=FALSE}
@@ -107,7 +108,7 @@ couplings$TES.couplingsPerJunction %>%
 
 ## Session information
 
-```{r SessionInfo, eval=TRUE, echo=FALSE}
+```{r SessionInfo, eval=TRUE, echo=FALSE, size="tiny"}
 sessionInfo()
 ```
 
