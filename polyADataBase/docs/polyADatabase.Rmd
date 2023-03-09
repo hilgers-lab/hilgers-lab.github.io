@@ -1,22 +1,129 @@
 ---
-title: "CIA Transcriptome poly(A) Database"
-output: rmdformats::readthedown
+title: "CIA Transcriptome"
+subtitle: "3'end analysis and processing"
+output:
+  rmdformats::readthedown:
+    toc_depth: 5
+    self_contained: true
+    thumbnails: false
+    lightbox: true
+    gallery: true
+    highlight: kate
 ---
 
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, warning=FALSE, message=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+require(dplyr)
+require(GenomicRanges)
+require(ggplot2)
+require(BSgenome.Dmelanogaster.UCSC.dm6)
+mainDir <- "/data/hilgers/group/alfonso/projects/2021_LRS_paper/data/pacbio/flam_seq/"
+```
+
+## About the Documentation 
+
+All functions required for 3'processing as well as additonal helper functions for Long-read data processing an exploration of CIA transcriptome are available are part of the `ciaTaiLoR` package. ciaTaiLoR can be easily installed by:  
+
+```{r, eval=FALSE}
+install.packages("devtools")
+devtools::install_github("hilgers-lab/ciaTaiLoR")
 ```
 
 ## poly(A) Database
 
+polyA database was created using data from [FLAM-seq](https://www.nature.com/articles/s41592-019-0503-y) and Oxford Nanopore [RNA Direct](https://www.nature.com/articles/nmeth.4577) sequencing methods. For each sequencing methods reads with poly(A) tails were identified using their already published pipelines. For FLAM-seq:  [repository available here](https://github.com/rajewsky-lab/FLAMAnalysis) and for Nanopore RNA Direct sequencing we used oxford nanopore pipeline for poly(A) tail calling: [repository available here](https://github.com/nanoporetech/pipeline-polya-ng). Both pipelines return mapped bam files containing only reads with an identifiable 3'end. 
+
+For simplification in this vignette we'll explore the processing of FLAM-seq data from the Drosophila Head tissue. 
+
+### Loading data 
+
+```{r, warning=FALSE, message=FALSE}
+library(ciaTaiLoR)
+# load bam file of genomic alignments 
+flamSeqData <- GenomicAlignments::readGAlignments(
+  paste0(mainDir, 
+         "flam_seq_pipeline/mapQuantGeneDir/w1118_heads_flam-seq_pooled.bam")) %>% 
+  GenomicRanges::GRanges(.) 
+# Invert strand 
+strand(flamSeqData) <- ifelse(strand(flamSeqData) == '+', '-', '+') 
+```
+
+
 ### 3'end extraction and filtering
 
+Given the high accuracy of FLAM-seq and RNA Direct methods, the most 3'end of every read with a poly(A) tail represents a highly accurate 3'end of each transcript, therefore we trimmed the reads for at their 3'ends leaving a single nucleotide. 
 
-### Clusters
+```{r, warning=FALSE, message=FALSE}
+flamSeq_singlent <- trim_single_nucleotide(flamSeqData)
+```
+
+### Clustering 
+
+Using this data we can now create clusters an annotate them with a reference annotation using `create_clusters()` function and retrieve the supported read counts associated with each cluster 
+
+```{r, warning=FALSE, message=FALSE}
+refAnnot <- "/data/repository/organisms/dm6_ensembl/ensembl/release-96/genes.gtf"
+geneAnnot <- rtracklayer::import.gff(refAnnot, feature.type = "gene")
+flamSeq_clusters <- create_clusters(flamSeq_singlent,
+                geneAnnot,
+                window = 50
+                )
+flamSeq_clusters$Counts <- countOverlaps(flamSeq_clusters, 
+                                 flamSeq_singlent)
+
+```
+
+### Feature extraction
+
+Features can be easily extracted from clusters using `extract_features()` function. This function retrieves several parameters that are useful to identify 3'ends from any time of data. 
+
+```{r, warning=FALSE, message=FALSE}
+flamSeq_clusters.features <- extract_features(flamSeq_clusters, 
+                 genomeSeq = BSgenome.Dmelanogaster.UCSC.dm6,
+                 dwindow = 50,
+                 upwindow = 50)
+
+```
+
+### Distribution of poly(A) signals
+
+When scanning for poly(A) signal hexamers in FLAM-seq data we can observe high proportion of cannonical poly(A) sites. 
+
+```{r, fig.align='center', fig.height=4, fig.width=4}
+flamSeq_clusters.features %>% 
+  group_by(polyAsignalClass) %>% tally() %>% 
+  mutate(percentage = n/sum(n)) %>% 
+  ggplot(., aes(fill=polyAsignalClass, 
+                y=percentage, 
+                x="")) + 
+    geom_bar(position="stack", stat="identity") + 
+  theme_classic() + 
+  xlab("FLAM-seq clusters") + 
+  ylab("Fraction of clusters")
+```
 
 
-## 3'end guided correction 
+### Nucleotide composition
+
+An additional read out is the nucleotide composition of the 3'ends, this can be easily plot using the cluster regions and the function `plotNucleotides()`. As expected due to the high quality definion of FLAM-seq the reads show the expected nucleotide composition without any possible internal priming bias in the regions flanking the polyA site. 
+
+```{r, fig.align='center', fig.height=5, fig.width=6.5}
+plotNucleotides(flamSeq_clusters,
+                genome = BSgenome.Dmelanogaster.UCSC.dm6)
+```
+
+## Correction of Long-read sequencing assemblies 
+
+```{r}
+
+```
+
+
+
+
+
+
 
 
 
