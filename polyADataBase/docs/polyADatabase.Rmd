@@ -1,128 +1,210 @@
 ---
-title: "CIA Transcriptome"
-subtitle: "3'end analysis and processing"
+title: "Start Sites detection with ONP-PCR"
 output:
-  rmdformats::readthedown:
-    toc_depth: 5
-    self_contained: true
-    thumbnails: false
-    lightbox: true
-    gallery: true
-    highlight: kate
+  pdf_document: default
+  html_document: default
 ---
 
-
-```{r setup, include=FALSE, warning=FALSE, message=FALSE}
+```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-require(dplyr)
-require(GenomicRanges)
-require(ggplot2)
-require(BSgenome.Dmelanogaster.UCSC.dm6)
-mainDir <- "/data/hilgers/group/alfonso/projects/2021_LRS_paper/data/pacbio/flam_seq/"
-```
-
-## About the Documentation 
-
-All functions required for 3'processing as well as additonal helper functions for Long-read data processing an exploration of CIA transcriptome are available are part of the `ciaTaiLoR` package. ciaTaiLoR can be easily installed by:  
-
-```{r, eval=FALSE}
-install.packages("devtools")
-devtools::install_github("hilgers-lab/ciaTaiLoR")
-```
-
-## poly(A) Database
-
-polyA database was created using data from [FLAM-seq](https://www.nature.com/articles/s41592-019-0503-y) and Oxford Nanopore [RNA Direct](https://www.nature.com/articles/nmeth.4577) sequencing methods. For each sequencing methods reads with poly(A) tails were identified using their already published pipelines. For FLAM-seq:  [repository available here](https://github.com/rajewsky-lab/FLAMAnalysis) and for Nanopore RNA Direct sequencing we used oxford nanopore pipeline for poly(A) tail calling: [repository available here](https://github.com/nanoporetech/pipeline-polya-ng). Both pipelines return mapped bam files containing only reads with an identifiable 3'end. 
-
-For simplification in this vignette we'll explore the processing of FLAM-seq data from the Drosophila Head tissue. 
-
-### Loading data 
-
-```{r, warning=FALSE, message=FALSE}
-library(ciaTaiLoR)
-# load bam file of genomic alignments 
-flamSeqData <- GenomicAlignments::readGAlignments(
-  paste0(mainDir, 
-         "flam_seq_pipeline/mapQuantGeneDir/w1118_heads_flam-seq_pooled.bam")) %>% 
-  GenomicRanges::GRanges(.) 
-# Invert strand 
-strand(flamSeqData) <- ifelse(strand(flamSeqData) == '+', '-', '+') 
-```
-
-
-### 3'end extraction and filtering
-
-Given the high accuracy of FLAM-seq and RNA Direct methods, the most 3'end of every read with a poly(A) tail represents a highly accurate 3'end of each transcript, therefore we trimmed the reads for at their 3'ends leaving a single nucleotide. 
-
-```{r, warning=FALSE, message=FALSE}
-flamSeq_singlent <- trim_single_nucleotide(flamSeqData)
-```
-
-### Clustering 
-
-Using this data we can now create clusters an annotate them with a reference annotation using `create_clusters()` function and retrieve the supported read counts associated with each cluster 
-
-```{r, warning=FALSE, message=FALSE}
-refAnnot <- "/data/repository/organisms/dm6_ensembl/ensembl/release-96/genes.gtf"
-geneAnnot <- rtracklayer::import.gff(refAnnot, feature.type = "gene")
-flamSeq_clusters <- create_clusters(flamSeq_singlent,
-                geneAnnot,
-                window = 50
-                )
-flamSeq_clusters$Counts <- countOverlaps(flamSeq_clusters, 
-                                 flamSeq_singlent)
+suppressPackageStartupMessages(require(dplyr))
+suppressPackageStartupMessages(require(GenomicRanges))
+suppressPackageStartupMessages(require(rtracklayer))
+suppressPackageStartupMessages(require(edgeR))
+suppressPackageStartupMessages(require(ggplot2))
+suppressPackageStartupMessages(require(ggsci))
+suppressPackageStartupMessages(require(ChIPseeker))
+suppressPackageStartupMessages(require(TxDb.Dmelanogaster.UCSC.dm6.ensGene))
+txdb <- TxDb.Dmelanogaster.UCSC.dm6.ensGene
 
 ```
 
-### Feature extraction
+## Load data 
 
-Features can be easily extracted from clusters using `extract_features()` function. This function retrieves several parameters that are useful to identify 3'ends from any time of data. 
-
-```{r, warning=FALSE, message=FALSE}
-flamSeq_clusters.features <- extract_features(flamSeq_clusters, 
-                 genomeSeq = BSgenome.Dmelanogaster.UCSC.dm6,
-                 dwindow = 50,
-                 upwindow = 50)
-
+```{r, include = FALSE }
+#path refs 
+refList <- list()
+# ensembl 
+pathRefAnnot <- "/data/repository/organisms/dm6_ensembl/ensembl/release-96/genes.gtf"
+refList$exon <- rtracklayer::import.gff(pathRefAnnot, feature.type="exon")
+# promoter edp 
+edpPath <- "/data/hilgers/group/alfonso/projects/LongReadSeq/repo/promoter.db.edp.bed"
+refList$edpDb <- rtracklayer::import.bed(edpPath)
+# make TSS ref from ensembl  
+#ensDataBase <- LORD::prepareLinksDatabase(refList$exon , tss.window = 50, tes.window = 100)
+dir5ends <- "/data/hilgers/group/alfonso/projects/2021_LRS_paper/data/dominant_promoters_dmel.NewCounter/bed/"
+endsPath <- list.files(dir5ends, pattern = "*5p.read_ends.bed", full.names = TRUE)
+bedFiles <- setNames( lapply(endsPath, rtracklayer::import.bed), n = basename(endsPath)) 
+# keep cannonical chromosomes 
+bedFiles <- lapply(bedFiles, function(x){ 
+  x[seqnames(x) %in% c("X", "3L" , "2L" , "3R" , "2R", "4"),]})
 ```
 
-### Distribution of poly(A) signals
-
-When scanning for poly(A) signal hexamers in FLAM-seq data we can observe high proportion of cannonical poly(A) sites. 
-
-```{r, fig.align='center', fig.height=4, fig.width=4}
-flamSeq_clusters.features %>% 
-  group_by(polyAsignalClass) %>% tally() %>% 
-  mutate(percentage = n/sum(n)) %>% 
-  ggplot(., aes(fill=polyAsignalClass, 
-                y=percentage, 
-                x="")) + 
-    geom_bar(position="stack", stat="identity") + 
-  theme_classic() + 
-  xlab("FLAM-seq clusters") + 
-  ylab("Fraction of clusters")
-```
-
-
-### Nucleotide composition
-
-An additional read out is the nucleotide composition of the 3'ends, this can be easily plot using the cluster regions and the function `plotNucleotides()`. As expected due to the high quality definion of FLAM-seq the reads show the expected nucleotide composition without any possible internal priming bias in the regions flanking the polyA site. 
-
-```{r, fig.align='center', fig.height=5, fig.width=6.5}
-plotNucleotides(flamSeq_clusters,
-                genome = BSgenome.Dmelanogaster.UCSC.dm6)
-```
-
-## Correction of Long-read sequencing assemblies 
-
+# Functions
 ```{r}
 
 ```
 
 
+## Make peaks and count 
+```{r , echo=FALSE}
+# make peaks from reads 
+peaks <- lapply(bedFiles, function (x) IRanges::reduce(x, min.gapwidth=150)  )
+# count peaks 
+peakCounts <- function(x,y){
+  x$peak.counts <- countOverlaps(x,y)
+  x$cpms <- edgeR::cpm(x$peak.counts)
+  return(x)
+  }
+peakCounts <- mapply(peakCounts, peaks, bedFiles) 
+```
+
+## peak counts and overlaps with Promoter database. window 100 nt 
+
+```{r}
+promoterDataBase <- refList$edpDb
+countsParams <- seq(1,50)
+filterCompare <- function(countCut, peakRegions){ 
+  fCounts <- peakRegions[peakRegions$peak.counts>countCut,]
+  hits <- findOverlaps(fCounts,promoterDataBase, maxgap = 150)
+  length(queryHits(hits))/queryLength(hits)
+}
+lapply.filterCompare<- function(peaks, countsCut){ 
+  do.call(rbind, setNames( lapply(countsCut, filterCompare, peaks), n = paste0("counts:",countsCut)))
+}
+peaksPerCounts <-  lapply( peakCounts, lapply.filterCompare, countsCut= countsParams)  
+names(peaksPerCounts) <- c("Heads_", "embryos.pooled_", "ovaries_", "embryos2_")
+fractionOfPeaks <- do.call(rbind, lapply(peaksPerCounts, function(x){ as.data.frame(x)}) ) %>% mutate(tissue=gsub("\\_.*","",rownames(.)), countCut=gsub(".*_.","",rownames(.))) 
+
+fractionOfPeaks %>% mutate(counts=as.numeric(gsub("counts:", "", countCut)) ) %>% filter(!tissue=="embryos2") %>% ggplot(., aes(x=counts, y=V1, colour=tissue)) + geom_point() + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + ylab("Fraction TSS overalps w EDP") + theme_classic() + xlab("min Read counts") + scale_color_aaas()
+
+```
+
+## peak counts and overlaps with Promoter database. window 100 nt 
+
+```{r}
+norm.countsParams <- seq(0,50)
+filterCompare <- function(countCut, peakRegions){ 
+  fCounts <- peakRegions[peakRegions$cpms>countCut,]
+  hits <- findOverlaps(fCounts,promoterDataBase, maxgap = 150)
+  length(queryHits(hits))/queryLength(hits)
+}
+lapply.filterCompare<- function(peaks, countsCut){ 
+  do.call(rbind, setNames( lapply(countsCut, filterCompare, peaks), n = paste0("counts:",countsCut)))
+}
+peaksPerCounts <-  lapply( peakCounts, lapply.filterCompare, countsCut= countsParams)  
+names(peaksPerCounts) <- c("Heads_", "embryos.pooled_", "ovaries_", "embryos2_")
+fractionOfPeaks <- do.call(rbind, lapply(peaksPerCounts, function(x){ as.data.frame(x)}) ) %>% mutate(tissue=gsub("\\_.*","",rownames(.)), countCut=gsub(".*_.","",rownames(.)))
+```
 
 
+```{r}
+fractionOfPeaks %>% mutate(counts=as.numeric(gsub("counts:", "", countCut)) ) %>% filter(!tissue=="embryos2") %>% ggplot(., aes(x=counts, y=V1, colour=tissue)) + geom_point() + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + ylab("Fraction TSS overalps w EDP") + theme_classic() + xlab("min counts per million") + scale_color_aaas() + geom_vline(xintercept = 15) 
 
+```
+
+# compared to ensembl 
+```{r}
+#ensDataBase <- LORD::prepareLinksDatabase(refList$exon , tss.window = 50, tes.window = 100)
+```
+
+# 
+
+# peaks bellow expression threshould
+```{r, include=FALSE}
+subsetByOverlapEDP <- function(peakRegions){ 
+  fCounts <- peakRegions[peakRegions$cpms<15,]
+  hits <- findOverlaps(fCounts,promoterDataBase, maxgap = 150)
+  hitEDP<- fCounts[-queryHits(hits),]
+  return(hitEDP)
+}
+nonOverlappingPeaksLow <- lapply(peakCounts, subsetByOverlapEDP)
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+nonOverlappingPeaksLow.ucsc <- lapply(nonOverlappingPeaksLow, function(x){
+  seqlevelsStyle(x) <- "UCSC"
+  return(x)
+})
+annotPeaksPerTissue<- lapply(nonOverlappingPeaksLow.ucsc, function(x){
+   annotatePeak(x, tssRegion=c(-150, 150),
+                         TxDb=txdb, annoDb="org.Dm.eg.db")
+})
+```
+
+# heads 
+```{r}
+plotAnnoPie(annotPeaksPerTissue$onp_1D_heads_pooled.bed5p.read_ends.bed, )
+```
+
+# embryos 
+```{r}
+plotAnnoPie(annotPeaksPerTissue$w1118_embryos_pooled.bed5p.read_ends.bed)
+```
+
+#ovaries
+```{r}
+plotAnnoPie(annotPeaksPerTissue$w118_ovaries_virgin_females_pooled.bed5p.read_ends.bed)
+
+```
+
+
+# After filtering of 15 CPMs 
+
+```{r}
+filterSummarize <- function(peakRegions){ 
+  fCounts <- peakRegions[peakRegions$cpms>15,]
+  hits <- findOverlaps(fCounts,promoterDataBase, maxgap = 100)
+  peakOverlapTable <- data.frame(peakTypes=c("total_peaks", "peaksInRef", "peaksOnlyLR"), n=c(queryLength(hits),length(queryHits(hits)),queryLength(hits)-length(queryHits(hits)) ) )
+  return(peakOverlapTable)
+}
+
+do.call(rbind, setNames( lapply(peakCounts, filterSummarize),n=c("Heads", "Embryos", "Ovaries", "Embryo2")) ) %>% mutate(tissue=gsub("\\..*","",rownames(.)) ) %>% filter(!tissue=="Embryo2") %>% ggplot(data=., aes(x=peakTypes, y=n, fill=peakTypes)) +
+  geom_bar(stat="identity") + facet_grid(cols=vars(tissue)) + theme_classic() + scale_fill_aaas() + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + ylab("Number of peaks")
+
+```
+
+
+## annotate non overlapping peaks 
+
+```{r}
+subsetByOverlapEDP <- function(peakRegions){ 
+  fCounts <- peakRegions[peakRegions$cpms>15,]
+  hits <- findOverlaps(fCounts,promoterDataBase, maxgap = 150)
+  hitEDP<- fCounts[-queryHits(hits),]
+  return(hitEDP)
+}
+nonOverlappingPeaksHigh <- lapply(peakCounts, subsetByOverlapEDP)
+```
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+nonOverlappingPeaksHigh.ucsc <- lapply(nonOverlappingPeaksHigh, function(x){
+  seqlevelsStyle(x) <- "UCSC"
+  return(x)
+})
+annotPeaksPerTissue<- lapply(nonOverlappingPeaksHigh.ucsc, function(x){
+   annotatePeak(x, tssRegion=c(-150, 150),
+                         TxDb=txdb, annoDb="org.Dm.eg.db")
+})
+
+```
+
+# per tissue regions 
+# head 
+```{r}
+plotAnnoPie(annotPeaksPerTissue$onp_1D_heads_pooled.bed5p.read_ends.bed)
+```
+
+# embryo 
+```{r}
+plotAnnoPie(annotPeaksPerTissue$w1118_embryos_pooled.bed5p.read_ends.bed)
+```
+
+# ovaries 
+```{r}
+plotAnnoPie(annotPeaksPerTissue$w118_ovaries_virgin_females_pooled.bed5p.read_ends.bed)
+```
 
 
 
