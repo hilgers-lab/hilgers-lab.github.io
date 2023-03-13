@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+
+<!--
+#
+# encrypted-sign-in.htm
+#
+# Copyright (C) 2021 by RStudio, PBC
+#
+# This program is licensed to you under the terms of version 3 of the
+# GNU Affero General Public License. This program is distributed WITHOUT
+# ANY EXPRESS OR IMPLIED WARRANTY, INCLUDING THOSE OF NON-INFRINGEMENT,
+# MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE. Please refer to the
+# AGPL (http://www.gnu.org/licenses/agpl-3.0.txt) for more details.
+#
+-->
+
+<html lang="en">
+
+<head>
+<meta charset="UTF-8" />
+<meta name="public-key-url" content="auth-public-key"/>
+<title>RStudio Sign In</title>
+<link rel="shortcut icon" href="images/favicon.ico" />
+
+<link rel="stylesheet" href="rstudio.css" type="text/css"/>
+<link rel="stylesheet" href="signin.css" type="text/css"/>
+<link rel="stylesheet" href="css/focus-visible.css" type="text/css"/>
+
+<style type="text/css">
+
+#errorpanel {
+  display: none;
+}
+
+</style>
+
+<script type="text/javascript" src="js/encrypt.min.js"></script>
+<script type="text/javascript" src="js/signin.js"></script>
+
+</head>
+<body>
+<div id="skipnav"><a href="#username">Skip navigation</a></div>
+<header role="banner" id="banner">
+  <div id="logo">
+    <a href="https://www.rstudio.com/">
+<picture>
+   <source
+      srcset="images/rstudio-dark.png"
+      media="(prefers-color-scheme: dark)"/>
+   <img src="images/rstudio.png" width="78" height="27" alt="RStudio Logo (goes to external site)"/>
+</picture></a>
+  </div>
+  <div id="licensed-to">
+    <span id="license-prefix"></span>
+    <span id="licensee"></span>
+  </div>
+</header>
+<main role="main">
+<div id="errorpanel">
+<p id="errortext">Error: </p>
+</div>
+<div role="alert" aria-atomic="true" class="visuallyhidden" id="live-error"></div>
+
+<form name="login_form" method="POST" action="javascript:void" onsubmit="submitRealForm();return false">
+<table role="presentation" id="border">
+  <tr>
+    <td>
+      <div role="group" aria-labelledby="caption_header">
+         <div id="controls">
+            <h1 id="caption_header" class="caption">Sign in to RStudio</h1>
+            <p>
+               <label for="username">Username:</label><br />
+               <input type='text'
+                        name='username'
+                        autocomplete='off'
+                        autocorrect='off'
+                        autocapitalize='off'
+                        spellcheck='false'
+                        value=''
+                        id='username'
+                        size='45'/><br />
+            </p>
+            <p>
+               <label for="password">Password:</label><br />
+               <input type='password'
+                        name='password'
+                        autocomplete='off'
+                        autocorrect='off'
+                        autocapitalize='off'
+                        spellcheck='false'
+                        value=''
+                        id='password'
+                        size='45'/><br />
+            </p>
+            <div style="display: block;">
+               <input type="checkbox" name="staySignedIn" id="staySignedIn" value="1"/>
+               <label id="staySignedInLabel" for="staySignedIn">Stay signed in when browser closes</label>
+               <p style="display: none;">
+                  <span style="font-size:10px">You will automatically be signed out after 0 minutes of inactivity.</span>
+               </p>
+            </div>
+            <input type="hidden" name="csrf-token" value="5c7fc090-faed-4cac-9523-7a82dbc7b7d2" />
+            <input type="hidden" name="appUri" value="&#x2F;?launcher=1&amp;view=rmarkdown"/>
+            <div class="buttonpanel">
+               <button id="signinbutton" class="fancy" type="submit">Sign In</button>
+            </div>
+         </div>
+         <div id="goback" class="signinhidden">
+            <h1 class="caption">Signed Out</h1>
+            <p role="alert" aria-atomic="true">This browser was signed out from RStudio due to inactivity or by a manual sign out initiated from another tab. A new sign in was detected and you may now return to RStudio using the button below.</p>
+            <div class="buttonpanel"><button class="fancy" type="button" onclick="window.location = responseURL;">Return to RStudio</button></div>
+         </div>
+      </div>
+    </td>
+  </tr>
+</table>
+</form>
+<div class="signin-spinner-holder">
+   <div aria-live="polite" class="visuallyhidden" id="progress-message"></div>
+   <div role="progressbar" aria-labelledby="progress-message" id="spinner" class="signin-hidden signin-spinner">
+      <div></div><div></div><div></div><div></div>
+      <div></div><div></div><div></div><div></div>
+      <div></div><div></div><div></div><div></div>
+   </div>
+</div>
+
+<form action="auth-do-sign-in" name="realform" method="POST">
+   <input type="hidden" name="persist" id="persist" value=""/>
+   <input type="hidden" name="csrf-token" value="5c7fc090-faed-4cac-9523-7a82dbc7b7d2" />
+   <input type="hidden" name="appUri" value="&#x2F;?launcher=1&amp;view=rmarkdown"/>
+   <input type="hidden" name="clientPath" id="clientPath" value=""/>
+   <input id="package" type="hidden" name="v" value=""/>
+</form>
+
+<div id="login-html">
+<h4 id="available-services">Available Services</h4>
+<ul>
+<li><a href="https://workbench.ie-freiburg.mpg.de/">Workbench</a>, provides users with three IDEs that run from their web browser: <em>RStudio</em>, <em>JupyterLab</em>, and <em>VSCode</em>.</li>
+<li><a href="https://rsconnect.ie-freiburg.mpg.de/">Connect</a>, allows groups to develop, share, and host <em>Shiny</em> applications, dashboards, reports, etc. Also, it allows the sharing of Jupyter notebooks and other <em>Python</em> integrations.</li>
+<li><a href="https://rspm.ie-freiburg.mpg.de/client/#/stats">Package Manager</a>, hosts fast local mirrors to <em>PyPI</em>, <em>CRAN</em>, and <em>Bioconductor</em> repositories, with optional pre-compiled binaries.</li>
+</ul>
+<p>Report any inconvenience(s) with these web applications at our slack channel, <a href="https://mpi-iebioinfo.slack.com/archives/C4Q0M651Q">#r-elated</a>. Thanks!</p>
+<h2 id="faq">FAQ</h2>
+<p>We are moving &amp; expanding this info to our wiki. <em>Contributions are welcome!</em>.</p>
+<h4 id="can-i-use-conda-environments-on-jupyterlab-and-on-rstudio-ide">Can I use conda environments on JupyterLab? And on RStudio IDE?</h4>
+<blockquote>
+<p>Yes! ...and no. For JupyterLab, <strong>See <a href="http://wiki.immunbio.mpg.de/wiki/index.php/Jupyter">this</a> wiki page.</strong> You can have an R kernel too. <!--Most probably, spawned in a 'vanilla' flavour
+(no Rprofile or Renviron settings!). You will need to
+`source("/opt/R/4.1.1/lib/R/etc/Rprofile.site")` to get the server-provided
+default settings.--></p>
+<p>At RStudio IDE, you can't use R from a conda environment. Yet, you may mix Python packages thanks to reticulate. For example, you may use <code>reticulate::use_virtualenv(&quot;/localenv/user/myvenv&quot;)</code> to have Python (i.e. using umap-learn in Seurat). Install them with <code>pip</code> + <code>venv</code>. This also applies to <a href="https://tensorflow.rstudio.com">TensorFlow</a>.</p>
+</blockquote>
+<h4 id="can-i-program-in-visualstudio-with-r-and-or-python">Can I program in VisualStudio with R and/ or Python?</h4>
+<blockquote>
+<p>Absolutely! Though, it requires the installation of extensions, there’s an icon on the left sidebar (<code>Ctrl+Shift+X</code>) that opens the panel where you can explore and install them.</p>
+<p>After installation of either Python or R extensions, adjust your interpreters' path (system, conda, whatever). For example, <code>{&quot;r.rpath.linux&quot;: &quot;/opt/R/3.6.3/bin/R&quot;, &quot;r.rterm.linux&quot;: &quot;/opt/R/3.6.3/bin/R&quot;,}</code> to use system's R 3.6.3</p>
+</blockquote>
+<h4 id="can-i-make-rsconnect-shiny-apps-publicly-accesible">Can I make RSConnect Shiny apps publicly accesible?</h4>
+<blockquote>
+<p>No. But <strong>see <a href="http://wiki.immunbio.mpg.de/wiki/index.php?title=Publishing_Shiny_Apps">this</a> wiki page</strong> for our offered workaround.</p>
+<p>If you use rsconnect to share apps <em>inside</em> our institute, please contact <script type="text/javascript">
+<!--
+h='&#x69;&#x65;&#x2d;&#102;&#114;&#x65;&#x69;&#98;&#x75;&#114;&#x67;&#46;&#x6d;&#112;&#x67;&#46;&#100;&#x65;';a='&#64;';n='&#98;&#x69;&#x6f;&#x69;&#110;&#102;&#x6f;&#x2d;&#x63;&#x6f;&#114;&#x65;';e=n+a+h;
+document.write('<a h'+'ref'+'="ma'+'ilto'+':'+e+'">'+e+'<\/'+'a'+'>');
+// -->
+</script><noscript>&#98;&#x69;&#x6f;&#x69;&#110;&#102;&#x6f;&#x2d;&#x63;&#x6f;&#114;&#x65;&#32;&#x61;&#116;&#32;&#x69;&#x65;&#x2d;&#102;&#114;&#x65;&#x69;&#98;&#x75;&#114;&#x67;&#32;&#100;&#x6f;&#116;&#32;&#x6d;&#112;&#x67;&#32;&#100;&#x6f;&#116;&#32;&#100;&#x65;</noscript> providing the name(s) of the app(s), and the desired URL mapping. To keep it tidy, we only set names inside group/ facility namespaces. For example, <code>rsconect.ie-freiburg.mpg.de/groupName/appName</code>. Vanity URLs are case sensitive may only include alphanumeric characters, hyphens, underscores, and slashes.</p>
+</blockquote>
+<!--
+(UNTESTED ANSWER)... update: https://docs.rstudio.com/connect/admin/r/package-management/#private-packages
+#### Can I use a private R package in an application deployed to RSConnect?
+
+> Yes, you only need to set up a local repository by calling
+> `tools::write_PACKAGES("/data/example/path/to/dir", type = "source")`, after
+> copying over the results from `R CMD build` into the corresponding path that
+> will act as a local repo. The URI needs to be appended to the list of
+> repositories: `options(repos = c(getOption("repos"), my_local_repo =
+> "file:///data/example/path/to/dir"))`. This repositories list will be part of
+> packrat's snapshot when deploying from your current R Session on Workbench to
+> an application on RSConnect. For details, see
+> [this](https://rstudio.github.io/packrat/custom-repos.html). Finally, you
+> will need to make this directory readable by every user: `$ chmod -R a+rx
+> /data/example/path/to/dir`.
+
+
+## TODO
+
+1. slurm nodes?
+1. Usage metrics? (rsw, rsc)
+1. Install genomes from Bioconductor @ Dockerfile to save SSD space
+
+### DONE
+
+> Setup mirrors of CRAN, Bioconductor, PyPI, etc.
+
+rspm create repo --name=prod-cran --description='Easy access to CRAN packages'
+rspm subscribe --repo=prod-cran --source=cran
+rspm sync --type=cran
+echo rspm list bioconductor versions
+rspm create source --type=bioconductor --version=3.14
+rspm create repo --name=bioc-3.14-local --description="Easy access to Bioconductor 3.14 packages, matches R 4.1.1 and CRAN snapshot October 27, 2021"  # https://bioconductor.org/news/bioc_3_14_release/
+rspm subscribe --repo=bioc-3.14-local --source=bioc-3.14
+rspm sync --type=bioconductor --source=bioc-3.14
+-->
+
+
+
+</div>
+
+</main>
+<script type="text/javascript" src="js/focus-visible.min.js"></script>
+</body>
+</html>
